@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 18.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1"
+	 id="svg2108" xmlns:svg="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+	 xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 48 48"
+	 enable-background="new 0 0 48 48" xml:space="preserve">
+<filter  width="1.1522222" height="1.5668966" id="filter5655" y="-0.28344828" x="-0.076111108">
+	<feGaussianBlur  stdDeviation="1.4531044" id="feGaussianBlur5657" inkscape:collect="always"></feGaussianBlur>
+</filter>
+<g id="layer1">
+	
+		<linearGradient id="path4173_1_" gradientUnits="userSpaceOnUse" x1="-31.8944" y1="118.7026" x2="-31.8944" y2="112.4526" gradientTransform="matrix(1.3384 0 0 -1.3384 58.8904 177.7185)">
+		<stop  offset="0" style="stop-color:#FFFFFF"/>
+		<stop  offset="1" style="stop-color:#C9C9C9"/>
+	</linearGradient>
+	<path id="path4173" fill="url(#path4173_1_)" d="M13.4,24.9H19l-3.3-3.1L15,22.7L14.3,22L13.4,24.9z"/>
+	
+		<linearGradient id="path4370_1_" gradientUnits="userSpaceOnUse" x1="-386.8706" y1="76.7293" x2="-388.1489" y2="77.3801" gradientTransform="matrix(-1.3085 0.2812 -0.2812 -1.3085 -466.0428 235.6747)">
+		<stop  offset="0" style="stop-color:#000000"/>
+		<stop  offset="1" style="stop-color:#000000;stop-opacity:0"/>
+	</linearGradient>
+	<path id="path4370" opacity="0.2278" fill="url(#path4370_1_)" enable-background="new    " d="M19.9,32.5c1.6-0.8,2.4-2.7,2.4-2.7
+		C21,24.4,17,20.7,17,20.7S20.3,29.1,19.9,32.5z"/>
+</g>
+<g id="rect4608" opacity="0.3486" filter="url(#filter5655)" enable-background="new    ">
+	<path d="M11.3,35.4h26.1c2.6,0,4.8,2.1,4.8,4.8l0,0c0,2.6-2.1,4.8-4.8,4.8H11.3c-2.6,0-4.8-2.1-4.8-4.8l0,0
+		C6.5,37.6,8.7,35.4,11.3,35.4z"/>
+</g>
+<path id="path4308" fill="#333333" stroke="#585956" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="
+	M17.9,43.5h14.2c4,0,8-1.5,9.5-5.7c1.4-4,0.2-11.6-8.8-17.7H16c-9,5.7-10.1,13.4-8,18C10.1,42.7,13.7,43.5,17.9,43.5z"/>
+<path id="path4320" fill="#333333" stroke="#585858" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="
+	M36.4,13.2c0,6.4-5.2,11.6-11.6,11.6s-11.6-5.2-11.6-11.6c0-6.4,5.2-11.6,11.6-11.6S36.4,6.8,36.4,13.2L36.4,13.2z"/>
+<g id="Layer_2" transform="matrix(-0.1247737,0.2315372,-0.2315372,-0.1247737,69.791005,9.1739778)">
+	<path id="path155" fill="none" d="M256,256L0,256L0,0l256,0L256,256z"/>
+</g>
+<linearGradient id="rect12137_1_" gradientUnits="userSpaceOnUse" x1="13.3067" y1="-365.2844" x2="32.9937" y2="-365.2844" gradientTransform="matrix(1.0058 0 0 -0.4976 1.4476 -168.4491)">
+	<stop  offset="0" style="stop-color:#962727"/>
+	<stop  offset="1" style="stop-color:#CE2E0A"/>
+</linearGradient>
+<path id="rect12137" fill="url(#rect12137_1_)" stroke="#100000" stroke-width="0.2653" d="M16.4,12.2H33c0.6,0,1.2,0.5,1.2,1.2v0
+	c0,0.6-0.5,1.2-1.2,1.2H16.4c-0.6,0-1.2-0.5-1.2-1.2v0C15.3,12.7,15.8,12.2,16.4,12.2z"/>
+<text transform="matrix(1 0 0 1 12.0239 36.5164)" fill="#CCCCCC" font-family="'Verdana-Bold'" font-size="10">TUM</text>
+</svg>
