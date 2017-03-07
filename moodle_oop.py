@@ -156,7 +156,8 @@ class Block:
 			self._cont=soup.text
 		#speichern bzw abgleichen mit DB
 		session = DBSession()
-		blockentry = session.query(BBlock).filter(BBlock.url==self._url and BBlock.cont==self._cont).first()
+		blockentry = session.query(BBlock).filter(BBlock.url==self._url, BBlock.cont==self._cont, BBlock.title==self._title).first()
+		#print(str(blockentry))
 		if not blockentry:
 			#create block
 			new_block = BBlock(url=self._url, cont=self._cont, type=self.__type, course=self._course, title=self._title)
@@ -181,14 +182,14 @@ class Link:
 			if self._urltype == "resource":
 				#zusätzliche Verarbeitung als Datei
 				session = DBSession()
-				fileentry = session.query(FFile).filter(FFile.id==self._id).first()
+				fileentry = session.query(FFile).filter(FFile.id==self._id, FFile.title==blockself._title).first()
 				if not fileentry:
 					#Datei ist noch nicht gespeichert
 					filename=self.__Download(blockself)
 					#Dateigröße checken
 					if os.path.getsize(filename)<50*1024*1024:
 						#zu Telegram hochladen & löschen
-						coursename=session.query(CCourse).filter(CCourse.id==blockself._course and CCourse.title==blockself._title).one()
+						coursename=session.query(CCourse).filter(CCourse.id==blockself._course).one()
 						resp=bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'), caption=coursename.name+" - "+blockself._title)
 						os.remove(filename)
 						#in DB speichern

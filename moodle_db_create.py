@@ -30,10 +30,10 @@ class BBlock(Base):
 	#von moodle.py eingetragen
 	__tablename__ = 'block'
 	type = Column(String(250), nullable=False)
-	title=Column(String(500), nullable=True)
+	title=Column(String(500), primary_key=True)
 	url = Column(String(2000), primary_key=True)
 	course = Column(Integer, ForeignKey('course.id'))
-	cont= Column(String(2500), nullable=True)
+	cont= Column(String(2500), primary_key=True)
 	
 class CCourse(Base):
     #von moodle.py erstellt -> aus der Übersichtsseite oder beim Scan der Kursseite
