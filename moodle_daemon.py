@@ -1,15 +1,17 @@
 #!/bin/python
-
+# -*- coding: utf-8 -*-
 from telegram.ext import Updater
 from telegram.ext import CommandHandler
 from telegram.ext import MessageHandler, Filters
-import logging, configparser
-from sqlalchemy import create_engine
+import logging, configparser, telegram
+from sqlalchemy import create_engine, distinct
 from sqlalchemy.orm import sessionmaker
-from moodle_db_create import Group, User, Base
+from sqlalchemy.sql import text
+from moodle_db_create import User, Base, FFile
 engine = create_engine('sqlite:///config/moodleusers.db')
 Base.metadata.bind = engine
 DBSession = sessionmaker(bind=engine)
+session = DBSession()
 
 config = configparser.ConfigParser()
 config.read('config/config.ini')
@@ -17,63 +19,40 @@ updater = Updater(token=config['DEFAULT']['BotToken'])
 dispatcher = updater.dispatcher
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
-
-def fill_db(chatid, first_name, title, session):
-    if chatid > 0:
-        #chat mit user
-        if session.query(User).filter(User.id == chatid).first() is None:
-            #insert user in db
-            new_user = User(id=chatid, first_name=first_name)
-            session.add(new_user)
-            session.commit()
-            return True
-        else:
-            return False
-    else:
-        #Gruppenchat
-        if session.query(Group).filter(Group.id == chatid).first() is None:
-            #insert group in db
-            new_group = Group(id=chatid, title=title)
-            session.add(new_group)
-            session.commit()
-            return True
-        else:
-            return False
-
-def delete_user(chatid, session):
-    if chatid > 0:
-        user = session.query(User).filter(User.id == chatid).first()
-        if user is None:
-            return False
-        else:
-            #delete entry
-            session.delete(user)
-            session.commit()
-            return True
-    else:
-        group = session.query(Group).filter(Group.id == chatid).first()
-        if group is None:
-            return False
-        else:
-            #delete entry
-            session.delete(group)
-            session.commit()
-            return True
 			
 def start(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text="Hallo, ich bin der TUM-Moodlebot. Ich benachrichtige alle registrierten Nutzer oder Gruppen über Änderungen in entsprechenden Moodle-Kursen. Du kannst meine Dienste mit /start und /stop aktivieren und deaktivieren.")
     session = DBSession()
-    if(fill_db(update.message.chat_id, update.message.chat.first_name, update.message.chat.title, session)):
-        bot.sendMessage(chat_id=update.message.chat_id, text="Chat zur DB hinzugefügt.")
+    entry=session.query(User).filter(User.id==update.message.chat_id).first()
+    if not entry:
+        bot.sendMessage(chat_id=update.message.chat_id, text="Hallo, ich bin der TUM-Moodlebot. Ich benachrichtige alle registrierten Nutzer oder Gruppen Ã¼ber Ã„nderungen in entsprechenden Moodle-Kursen. Du kannst Benachrichtigungen mit /start oder /stop aktivieren bzw. deaktivieren. Wenn du eine Datei direkt von mir zugesendet haben möchtest, wähle zuerst über die Tastatur den Kurs aus.")
+        new_user = User(id=update.message.chat_id, first_name=update.message.chat.first_name, last_name=update.message.chat.last_name, username=update.message.chat.username, title=update.message.chat.title, notifications=True, current_selection="0")
+        bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen aktiv.")
+        session.add(new_user)
+        session.commit()
     else:
-        bot.sendMessage(chat_id=update.message.chat_id, text="Chat breits in DB.")
+        if entry.notifications:
+            bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen bereits aktiv.")
+        else:
+            entry.notifications=True
+            session.commit()
+            bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen aktiviert.")
     session.close()
 def stop(bot, update):
     session = DBSession()
-    if(delete_user(update.message.chat_id, session)):
-        bot.sendMessage(chat_id=update.message.chat_id, text="Chat aus DB gelöscht.")
+    entry=session.query(User).filter(User.id==update.message.chat_id).first()
+    if not entry:
+        bot.sendMessage(chat_id=update.message.chat_id, text="Hallo, ich bin der TUM-Moodlebot. Ich benachrichtige alle registrierten Nutzer oder Gruppen Ã¼ber Ã„nderungen in entsprechenden Moodle-Kursen. Du kannst Benachrichtigungen mit /start oder /stop aktivieren bzw. deaktivieren. Wenn du eine Datei direkt von mir zugesendet haben möchtest, wähle zuerst über die Tastatur den Kurs aus.")
+        new_user = User(id=update.message.chat_id, first_name=update.message.chat.first_name, last_name=update.message.chat.last_name, username=update.message.chat.username, title=update.message.chat.title, notifications=False, current_selection=0)
+        bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen nicht aktiv.")
+        session.add(new_user)
+        session.commit()
     else:
-        bot.sendMessage(chat_id=update.message.chat_id, text="Chat nicht in DB.")
+        if not entry.notifications:
+            bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen bereits inaktiv.")
+        else:
+            entry.notifications=False
+            session.commit()
+            bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen deaktiviert.")    
     session.close()
 
 start_handler = CommandHandler('start', start)
@@ -82,11 +61,31 @@ dispatcher.add_handler(start_handler)
 dispatcher.add_handler(stop_handler)
 
 def echo(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text="Im Moment kann ich noch nicht auf Dinge antworten.")
+    session = DBSession()
+    entry=session.query(User).filter(User.id==update.message.chat_id).first()
+    if (not not entry) and entry.current_selection=="0":
+        courses=session.execute(text("SELECT DISTINCT course FROM files")).fetchall()
+        custom_keyboard=[]
+        for course in courses:
+            custom_keyboard.append([course.course])
+        reply_markup = telegram.ReplyKeyboardMarkup(custom_keyboard)
+        bot.sendMessage(chat_id=update.message.chat_id, text="Benachrichtigungen können mit /start und /stop bearbeitet werden. Dateien können direkt über die Tastatur ausgewählt werden.", reply_markup=reply_markup)
+        entry.current_selection=1
+        session.commit()
+    elif (not not entry) and entry.current_selection=="1":
+        files=session.query(FFile).filter(FFile.course==update.message.text) # unbedingt prüfen, ob überhaupt ergebnisse vorhanden sind
+        custom_keyboard=[]
+        for ffile in files:
+            #print(ffile.name)
+            custom_keyboard.append([ffile.name])
+        custom_keyboard.append(["Zurück"])
+        reply_markup = telegram.ReplyKeyboardMarkup(custom_keyboard)
+        bot.sendMessage(chat_id=update.message.chat_id, text="test", reply_markup=reply_markup)
+    session.close()
 	
 echo_handler = MessageHandler(Filters.text, echo)
 dispatcher.add_handler(echo_handler)
 
-updater.start_webhook(listen='localhost', port=4213, webhook_url=config['DEFAULT']['BotToken'])
+updater.start_webhook(listen='localhost', port=4214, webhook_url=config['DEFAULT']['WebHookUrl'])
 updater.idle()
 updater.stop()

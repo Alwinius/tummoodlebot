@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 from bs4 import BeautifulSoup
-from moodle_db_create import Base, Group, User
+from moodle_db_create import Base, User, FFile
 import re, requests, telegram, urllib, configparser
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from time import gmtime, strftime
+from moodle_modules import save_file_to_db, moodle_login, sendtoall, sendfiletoall
 
 #chatid=8047779
 config = configparser.ConfigParser()
@@ -19,23 +20,12 @@ def getchatids():
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     chatids = []
-    groups = session.query(Group).all()
-    for group in groups:
-        chatids.append(group.id)
-    users = session.query(User).all()
+    users = session.query(User).filter(User.notifications==True)
     for user in users:
         chatids.append(user.id)
     session.close()
     return chatids
 
-def moodle_login():
-    s = requests.Session()
-    login = s.get("https://www.moodle.tum.de/Shibboleth.sso/Login?providerId=https%3A%2F%2Ftumidp.lrz.de%2Fidp%2Fshibboleth&target=https%3A%2F%2Fwww.moodle.tum.de%2Fauth%2Fshibboleth%2Findex.php", allow_redirects=True)
-    auth = s.post("https://tumidp.lrz.de/idp/Authn/UserPassword", allow_redirects=True, data={"j_password": config['DEFAULT']['Password'], "j_username": config['DEFAULT']['Username']}, cookies=login.cookies)
-    resp = re.search(r"SAMLResponse\" value=\"(.*)\"/>", auth.text)
-    s.cookies = requests.utils.add_dict_to_cookiejar(s.cookies, {"_shibstate_123":"https%3A%2F%2Fwww.moodle.tum.de%2Fauth%2Fshibboleth%2Findex.php"})
-    final = s.post("https://www.moodle.tum.de/Shibboleth.sso/SAML2/POST", allow_redirects=True, data={"SAMLResponse":resp.groups()[0], "RelayState":"cookie:123"})
-    return requests.utils.dict_from_cookiejar(s.cookies)["MoodleSession"]
 def moodle_list(cookies):
     url = "https://www.moodle.tum.de/my/"
     response = requests.get(url, cookies=cookies).text
@@ -43,7 +33,7 @@ def moodle_list(cookies):
 def moodle_get(id, cookies):
     r = requests.get("https://www.moodle.tum.de/course/view.php?id=" + str(id), cookies=cookies)
     soup = BeautifulSoup(r.content, "lxml")
-    cont = soup.select(".course-content")
+    cont = soup.select(".course-content < .weeks")
     cont = re.sub(r'( (?:aria\-owns=\"|id=\")random[0-9a-f]*_group\")', "", str(cont))
     cont = re.sub(r"(<img.*?>)", "", cont)
     cont = re.sub(r"(<span class=\"accesshide \">Diese Woche</span>)", "", cont)
@@ -104,38 +94,43 @@ def moodle_compare_extract(id, cont):
                 return {"change":True, "links":entries}
         return {"change":False, "links":[]}
 
-	
 cookies = {"MoodleSession":moodle_login()}
-#cookies={"MoodleSession":"9e0b66b738f0210ed96ec6d56e0d958a"}
+#cookies={"MoodleSession":"478cec338043640feb0c0e06f9f0e79e"}
 pages = moodle_list(cookies)
-message = u""
 chatids = getchatids()
-counter = 0
+newfiles=[]
+engine = create_engine('sqlite:///config/moodleusers.db')
+Base.metadata.bind = engine
+DBSession = sessionmaker(bind=engine)
+session = DBSession()
 for course in pages:
     if not course in ignore_courses:
         cont = moodle_get(course, cookies)
         new = moodle_compare_extract(course, cont[0])
         if new["change"]:
-            moodle_save(course, cont[0])
-            message += "Neue Inhalte im " + cont[1] + ": \n"
-            counter += 1
+            #moodle_save(course, cont[0])
             if len(new["links"]) > 0:
                 for link in new["links"]:
-                    message += "<a href=\"" + link[0] + "\">" + link[1] + "</a>\n"
-                    counter += 1
-                    if(counter > 38):
-                        counter = 0
-                        for chatid in chatids:
-                            bot.sendMessage(chat_id=chatid, text=message, parse_mode=telegram.ParseMode.HTML)
-						
-                        message = ""
+                    file=save_file_to_db(cookies, link[0], link[1], cont[1], session, bot)
+                    if(file[0]): 
+                        newfiles.append({"file_id":file[1], "name":link[1], "course": cont[1]})
+                    else:
+                        newfiles.append({"file_id":"", "course":cont[1], "courseid":course})
             else:
-                message = u' '.join([message, u'Änderungen erkannt.\n'])
-				
-#print(message)
-#while(len(message)>4096):
-#	bot.sendMessage(chat_id=chatid, text=message[:4096], parse_mode=telegram.ParseMode.HTML)
-#	message=message[4096:]
-if len(message) > 0:
-	for chatid in chatids:
-		bot.sendMessage(chat_id=chatid, text=message, parse_mode=telegram.ParseMode.HTML)
+                newfiles.append({"file_id":"", "course":cont[1], "courseid":course})
+session.close()
+oldcourse=""        
+for newfile in newfiles:
+    if newfile["course"]!=oldcourse:
+        #Bearbeitung eines neuen Kurses
+        oldcourse=newfile["course"]
+        if newfile["file_id"]=="":
+            #Wenn keine Datei gefunden wurde
+            sendtoall(chatids, "Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id="+newfile["courseid"]+"\">"+newfile["course"][6:]+"</a> erkannt.", bot)
+        else:
+            sendtoall(chatids, "Neue Dateien im "+newfile["course"]+":", bot)
+            sendfiletoall(chatids, newfile["file_id"], newfile["course"][6:]+" - "+newfile["name"], bot)
+    else:
+        #Wenn das nicht der erste Eintrag eines neuen Kurses ist
+        if not newfile["file_id"]==0:
+            sendfiletoall(chatids, newfile["file_id"], newfile["course"][6:]+" - "+newfile["name"], bot)
