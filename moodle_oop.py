@@ -22,7 +22,7 @@ DBSession = sessionmaker(bind=engine)
 
 config = configparser.ConfigParser()
 config.read('config/config.ini')
-ignore_courses = ["31213"]
+ignore_courses = []
 
 bot = telegram.Bot(token=config['DEFAULT']['BotToken'])
 
@@ -104,12 +104,14 @@ class Course:
             b = Block(block, self._courseid, self._cookie)
             bl.append(b)
             if b._changelist["type"] != "none":
-            	self._changes.append(b._changelist)
+            	for change in b._changelist["values"]:
+                    self._changes.append(change)
         for block in blocks:
             b = Block(block.next_sibling.contents[0], self._courseid, self._cookie)
             bl.append(b)
             if b._changelist["type"] != "none":
-            	self._changes.append(b._changelist)
+                for change in b._changelist["values"]:
+                    self._changes.append(change)
         return bl
 		
     def __PropagateChanges(self):
@@ -119,16 +121,21 @@ class Course:
             message = {0:"Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + self._courseid + "\">" + self._coursename + "</a> erkannt:"}
             for entry in self._changes:
                 if entry["type"] == "url":
+                    print(entry)
                     toadd = "\n<a href=\"" + entry["url"] + "\">" + entry["title"] + "</a>"
                     if len(entry["contentafterlink"]) > 0:
                         toadd += " - " + entry["contentafterlink"]
                 elif entry["type"] == "text":
+                    print(entry)
                     toadd = "\n" + entry["cont"]
                 else:
                     toadd = ""
                 if len(message[counter] + toadd) > 4096:
                     counter += 1
-                message[counter] = message[counter] + toadd if message[counter] is not None else toadd
+                try:
+                    message[counter]=message[counter]+toadd
+                except KeyError:
+                    message[counter]=toadd
             #fetch users and send message to all of them
             session = DBSession()
             chatids = list()
@@ -174,7 +181,6 @@ class Block:
         #speichern bzw abgleichen mit DB
         session = DBSession()
         blockentry = session.query(BBlock).filter(BBlock.url == self._url, BBlock.cont == self._cont, BBlock.title == self._title).first()
-        #print(str(blockentry))
         if not blockentry:
             #create block
             print("Adding " + self._url + " " + self._title + " " + self._cont)
@@ -185,56 +191,100 @@ class Block:
             if self.__type == "url":
                 link = Link(self)
                 #speichern als Link zu message/Datei
-                self._changelist = {"type":"url", "title":self._title, "url":link._url, "contentafterlink":self._cont}
+                self._changelist = {"type":"url", "values": link._values} #{"type":"url", "title":self._title, "url":link._url, "contentafterlink":self._cont}}
             else:
                 #speichern des Blockinhalts
-                self._changelist = {"type":"text", "cont":self._cont}
+                self._changelist = {"type":"text", "values": [{"type":"text", "cont":self._cont}]}
+        if not not blockentry and re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/folder\/.*?id=([0-9]*)", self._url) is not None:
+            #Scan von Ordnern
+            link = Link(self)
+            #speichern als Link zu message/Datei
+            self._changelist = {"type":"url", "values": link._values}
         session.close()
 		
 class Link:
     def __init__(self, blockself):
-        normallink = re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(.*?)\/.*?id=([0-9]*)", blockself._url)
+        self._url=blockself._url
+        self._title=blockself._title
+        self._firsttitle=self._title
+        self._course=blockself._course
+        self._cont=blockself._cont
+        self._cookie=blockself._cookie
+        normallink = re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(.*?)\/.*?id=([0-9]*)", self._url)
+        dllink=re.match(r"https://www\.moodle\.tum\.de/pluginfile\.php/([0-9]*)/mod_folder/content/0/(.*)", self._url)
         if normallink is not None:
             self._urltype = normallink.groups(1)[0]
             self._id = int(normallink.groups(1)[1])
             if self._urltype == "resource":
                 #zusätzliche Verarbeitung als Datei
-                session = DBSession()
-                fileentry = session.query(FFile).filter(FFile.id == self._id, FFile.title == blockself._title).first()
-                if not fileentry:
-                    #Datei ist noch nicht gespeichert
-                    filename = self.__Download(blockself)
-                    #Dateigröße checken
-                    if os.path.getsize(filename) < 50 * 1024 * 1024:
-                        #zu Telegram hochladen & löschen
-                        coursename = session.query(CCourse).filter(CCourse.id == blockself._course).one()
-                        resp = bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'), caption=coursename.name + " - " + blockself._title)
-                        os.remove(filename)
-                        #in DB speichern
-                        new_file = FFile(id=self._id, course=blockself._course, title=blockself._title, message_id=resp.message_id, date=datetime.now())
-                        self._url = "https://t.me/tummoodle/" + str(resp.message_id)
-                        session.add(new_file)
-                        session.commit()
-                    else:
-                        os.remove(filename)
-                        self._url = "https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id)
-                else:
-                    self._url = "https://t.me/tummoodle/" + str(fileentry.message_id)
-                session.close()
-        else:
-            self._urltype = "unknown"
-            self._id = 0
-            self._url = blockself._url
-    def __Download(self, blockself):
-        print("Downloading from https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id))
-        r = requests.get("https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id), stream=True, cookies=blockself._cookie)
+                self.__ProcessFile()
+            elif self._urltype=="folder":
+                #Parse as folder    
+                self.__ParseFolder()
+            else: #URL entspricht Muster ist aber nicht folder oder ressource
+                self._urltype = "unknown"
+                self._id = 0
+                self._values=[{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
+        elif dllink is not None: 
+                self._id=dllink.groups(1)[0]
+                self.__ProcessFile()
+        else: #Link entspricht nicht dem Schema
+            self._values=[]
+        
+    def __Download(self):
+        print("Downloading from " + str(self._url))
+        r = requests.get(self._url, stream=True, cookies=self._cookie)
         filename = parse.unquote(r.url.split('/')[-1])
         with open(filename, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024): 
                 if chunk: # filter out keep-alive new chunks
                     f.write(chunk)
         return filename
-			
+    
+    def __ProcessFile(self):
+        session = DBSession()
+        fileentry = session.query(FFile).filter(FFile.id == self._id, FFile.title == self._title).first()
+        if not fileentry:
+            #Datei ist noch nicht gespeichert
+            filename = self.__Download()
+            #Dateigröße checken
+            if os.path.getsize(filename) < 50 * 1024 * 1024:
+                #zu Telegram hochladen & löschen
+                coursename = session.query(CCourse).filter(CCourse.id == self._course).one()
+                resp = bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'), caption=coursename.name + " - " + self._title)
+                os.remove(filename)
+                #in DB speichern
+                new_file = FFile(id=self._id, course=self._course, title=self._title, message_id=resp.message_id, date=datetime.now())
+                self._url = "https://t.me/tummoodle/" + str(resp.message_id)        
+                session.add(new_file)
+                session.commit()
+            else:
+                os.remove(filename)
+                self._url = "https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id)
+            #Speichern der Änderungen für Rückgabe
+            self._values=[{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
+        else: 
+        #    self._url = "https://t.me/tummoodle/" + str(fileentry.message_id)
+            self._values=[]
+        session.close()
+    
+    def __ParseFolder(self):
+        #Download filelist
+        r=requests.get("https://www.moodle.tum.de/mod/folder/view.php?id=" + str(self._id), cookies=self._cookie)
+        soup=BeautifulSoup(r.text, "lxml")
+        files=soup.select(".fp-filename-icon")
+        self._values=[]
+        for file in files:
+            try:
+                self._url=re.sub(r"\?forcedownload=1", "", file.select("a")[0].get('href'))
+                self._title=self._firsttitle+" - "+file.select(".fp-filename")[0].text
+                #initialize new Link element
+                link=Link(self)
+                self._values+=link._values
+            except IndexError:
+                pass
+
+            
 			
 alwin = Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
 
