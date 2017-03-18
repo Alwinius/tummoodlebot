@@ -8,6 +8,7 @@ from moodle_db_create import Base
 from moodle_db_create import CCourse
 from moodle_db_create import FFile
 from moodle_db_create import UUser
+from moodle_db_create import MMedia
 import os
 import re
 import requests
@@ -30,25 +31,25 @@ class Moodleuser:
     def __init__(self, username, password):
         self._username = username
         self.__password = password
-        self._cookie = {"MoodleSession":self.__Login()} #login
+        self._session = self.__Login() #login
         self._courses = self.__ListCourses() #courselist + name
         for course in self._courses[0]:
             if not course[0] in ignore_courses:
-                a = Course(self._cookie, course[0], course[1])
+                a = Course(course[0], course[1], self._session)
 		
     def __Login(self):
         s = requests.Session()
-        login = s.get("https://www.moodle.tum.de/Shibboleth.sso/Login?providerId=https%3A%2F%2Ftumidp.lrz.de%2Fidp%2Fshibboleth&target=https%3A%2F%2Fwww.moodle.tum.de%2Fauth%2Fshibboleth%2Findex.php", allow_redirects=True)
+        s.get("https://www.moodle.tum.de/Shibboleth.sso/Login?providerId=https%3A%2F%2Ftumidp.lrz.de%2Fidp%2Fshibboleth&target=https%3A%2F%2Fwww.moodle.tum.de%2Fauth%2Fshibboleth%2Findex.php", allow_redirects=True)
         headers = {'Content-Type': 'application/x-www-form-urlencoded', "Origin": "https://tumidp.lrz.de", "Connection": "keep-alive", "Content-Length":"74"}
         auth = s.post("https://tumidp.lrz.de/idp/profile/SAML2/Redirect/SSO?execution=e1s1", headers=headers, data={"j_username": self._username, "j_password": self.__password, "_eventId_proceed": "", "donotcache":"1"}, allow_redirects=False)
         resp = re.search(r"SAMLResponse\" value=\"(.*)\"/>", auth.text)
         s.cookies = requests.utils.add_dict_to_cookiejar(s.cookies, {"_shibstate_123":"https%3A%2F%2Fwww.moodle.tum.de%2Fauth%2Fshibboleth%2Findex.php"})
-        final = s.post("https://www.moodle.tum.de/Shibboleth.sso/SAML2/POST", allow_redirects=True, data={"SAMLResponse":resp.groups()[0], "RelayState":"cookie:123"})
-        return requests.utils.dict_from_cookiejar(s.cookies)["MoodleSession"]
+        s.post("https://www.moodle.tum.de/Shibboleth.sso/SAML2/POST", allow_redirects=True, data={"SAMLResponse":resp.groups()[0], "RelayState":"cookie:123"})
+        return s
 	
     def __ListCourses(self):
         url = "https://www.moodle.tum.de/my/?lang=de"
-        response = requests.get(url, cookies=self._cookie).text
+        response = self._session.get(url).text
         if response.find("<title>Meine Startseite</title>") > -1:
             courselist = re.findall(r"href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">(.*?)<", response, re.MULTILINE)
             fullname = re.search(r"userpic defaultuserpic\" width=\"60\" height=\"60\" />(.*?)<", response).groups(1)[0]
@@ -57,10 +58,10 @@ class Moodleuser:
             return [[], ""]
 			
 class Course:
-    def __init__(self, cookie, courseid, coursename):
+    def __init__(self, courseid, coursename, sess):
         self._courseid = courseid
         self._coursename = coursename
-        self._cookie = cookie
+        self._session = sess
         self._changes = list()
         self.__GetContent()
         # Jetzt mit der DB abgleichen
@@ -78,7 +79,7 @@ class Course:
         self.__PropagateChanges()
 		
     def __GetContent(self):
-        r = requests.get("https://www.moodle.tum.de/course/view.php?id=" + str(self._courseid) + "&lang=de", cookies=self._cookie)
+        r = self._session.get("https://www.moodle.tum.de/course/view.php?id=" + str(self._courseid) + "&lang=de")
         soup = BeautifulSoup(r.content, "lxml")
         if "<title>Kurs:" in r.text:
             cont = soup.select(".course-content")
@@ -101,13 +102,13 @@ class Course:
         blocks2 = soup.select(".summary p")
         bl = list()
         for block in blocks2:
-            b = Block(block, self._courseid, self._cookie)
+            b = Block(block, self._courseid, self._session)
             bl.append(b)
             if b._changelist["type"] != "none":
             	for change in b._changelist["values"]:
                     self._changes.append(change)
         for block in blocks:
-            b = Block(block.next_sibling.contents[0], self._courseid, self._cookie)
+            b = Block(block.next_sibling.contents[0], self._courseid, self._session)
             bl.append(b)
             if b._changelist["type"] != "none":
                 for change in b._changelist["values"]:
@@ -118,7 +119,7 @@ class Course:
         #Prepare message
         if len(self._changes) > 0:
             counter = 0
-            message = {0:"Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + self._courseid + "\">" + self._coursename + "</a> erkannt:"}
+            message = {0:"Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + str(self._courseid) + "\">" + self._coursename + "</a> erkannt:"}
             for entry in self._changes:
                 if entry["type"] == "url":
                     print(entry)
@@ -133,9 +134,9 @@ class Course:
                 if len(message[counter] + toadd) > 4096:
                     counter += 1
                 try:
-                    message[counter]=message[counter]+toadd
+                    message[counter] = message[counter] + toadd
                 except KeyError:
-                    message[counter]=toadd
+                    message[counter] = toadd
             #fetch users and send message to all of them
             session = DBSession()
             chatids = list()
@@ -149,10 +150,10 @@ class Course:
 		
 		
 class Block:
-    def __init__(self, block, course, cookie):
+    def __init__(self, block, course, session):
         self.__content = block
         self._course = course
-        self._cookie = cookie
+        self._session = session
         self._changelist = {"type":"none"}
         self.__block = self.__AnalyseBlock()
 		
@@ -195,7 +196,7 @@ class Block:
             else:
                 #speichern des Blockinhalts
                 self._changelist = {"type":"text", "values": [{"type":"text", "cont":self._cont}]}
-        if not not blockentry and re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/folder\/.*?id=([0-9]*)", self._url) is not None:
+        if not not blockentry and re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(folder|lti)\/.*?id=([0-9]*)", self._url) is not None:
             #Scan von Ordnern
             link = Link(self)
             #speichern als Link zu message/Datei
@@ -204,36 +205,39 @@ class Block:
 		
 class Link:
     def __init__(self, blockself):
-        self._url=blockself._url
-        self._title=blockself._title
-        self._firsttitle=self._title
-        self._course=blockself._course
-        self._cont=blockself._cont
-        self._cookie=blockself._cookie
+        self._url = blockself._url
+        self._title = blockself._title
+        self._firsttitle = self._title
+        self._course = blockself._course
+        self._cont = blockself._cont
+        self._session = blockself._session
         normallink = re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(.*?)\/.*?id=([0-9]*)", self._url)
-        dllink=re.match(r"https://www\.moodle\.tum\.de/pluginfile\.php/([0-9]*)/mod_folder/content/0/(.*)", self._url)
+        dllink = re.match(r"https://www\.moodle\.tum\.de/pluginfile\.php/([0-9]*)/mod_folder/content/0/(.*)", self._url)
         if normallink is not None:
             self._urltype = normallink.groups(1)[0]
             self._id = int(normallink.groups(1)[1])
             if self._urltype == "resource":
                 #zusätzliche Verarbeitung als Datei
                 self.__ProcessFile()
-            elif self._urltype=="folder":
+            elif self._urltype == "folder":
                 #Parse as folder    
                 self.__ParseFolder()
+            elif self._urltype == "lti": 
+                #videoordner
+                self.__ParseVideoFolder()
             else: #URL entspricht Muster ist aber nicht folder oder ressource
                 self._urltype = "unknown"
                 self._id = 0
-                self._values=[{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
+                self._values = [{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
         elif dllink is not None: 
-                self._id=dllink.groups(1)[0]
-                self.__ProcessFile()
+            self._id = dllink.groups(1)[0]
+            self.__ProcessFile()
         else: #Link entspricht nicht dem Schema
-            self._values=[]
+            self._values = []
         
     def __Download(self):
         print("Downloading from " + str(self._url))
-        r = requests.get(self._url, stream=True, cookies=self._cookie)
+        r = self._session.get(self._url, stream=True)
         filename = parse.unquote(r.url.split('/')[-1])
         with open(filename, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024): 
@@ -262,25 +266,48 @@ class Link:
                 os.remove(filename)
                 self._url = "https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id)
             #Speichern der Änderungen für Rückgabe
-            self._values=[{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
+            self._values = [{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
         else: 
-        #    self._url = "https://t.me/tummoodle/" + str(fileentry.message_id)
-            self._values=[]
+        #    self._url = "https://t.me/tummoodle/" + str(fileentry.message_id) #Nicht mehr aktiv, da Titel bei Änderung auch geändert, so würde jeder Ordner immer augegeben werden
+            self._values = []
         session.close()
-    
+        
+    def __ParseVideoFolder(self):
+        resp = self._session.get(re.sub(r"view", "launch", self._url))
+        soup = BeautifulSoup(resp.text, "lxml")
+        oauth=soup.select("input")
+        values = {}
+        for inp in oauth:
+            values[inp.get('name')] = inp.get('value')
+        r=self._session.post(soup.select("form")[0].get("action"), data=values)
+        courseid=re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
+        reqbody={"IsViewPage":True, "CatalogId":courseid,"CurrentFolderId":courseid,"ItemsPerPage":200,"PageIndex":0,"CatalogSearchType":"SearchInFolder"}
+        medialist=self._session.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
+        self._values=[]
+        session = DBSession()
+        for media in medialist["PresentationDetailsList"]:
+            medium = session.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
+            if not medium:
+                #create course
+                datetim=datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
+                new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"],date=datetim, course=self._course)
+                session.add(new_medium)
+                session.commit()
+        session.close()            
+            
     def __ParseFolder(self):
         #Download filelist
-        r=requests.get("https://www.moodle.tum.de/mod/folder/view.php?id=" + str(self._id), cookies=self._cookie)
-        soup=BeautifulSoup(r.text, "lxml")
-        files=soup.select(".fp-filename-icon")
-        self._values=[]
+        r = self._session.get("https://www.moodle.tum.de/mod/folder/view.php?id=" + str(self._id))
+        soup = BeautifulSoup(r.text, "lxml")
+        files = soup.select(".fp-filename-icon")
+        self._values = []
         for file in files:
             try:
-                self._url=re.sub(r"\?forcedownload=1", "", file.select("a")[0].get('href'))
-                self._title=self._firsttitle+" - "+file.select(".fp-filename")[0].text
+                self._url = re.sub(r"\?forcedownload=1", "", file.select("a")[0].get('href'))
+                self._title = self._firsttitle + " - " + file.select(".fp-filename")[0].text
                 #initialize new Link element
-                link=Link(self)
-                self._values+=link._values
+                link = Link(self)
+                self._values += link._values
             except IndexError:
                 pass
 
@@ -288,4 +315,4 @@ class Link:
 			
 alwin = Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
 
-#physik = Course(alwin._cookie, 31297, "Physik für Elektroingenieure")
+#schaltungstechnik = Course(31207, "Schaltungstechnik 1", alwin._session)
