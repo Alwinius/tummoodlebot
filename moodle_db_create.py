@@ -1,4 +1,4 @@
-#!/bin/python
+#!/bin/python3
 # -*- coding: utf-8 -*-
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -7,6 +7,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import create_engine
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -20,8 +21,8 @@ class UUser(Base):
     username = Column(String(255), nullable=True)
     notifications = Column(Boolean(), nullable=False)
     #for tummoodlebot 2.0
-    current_selection = Column(String(250), nullable=True)
-    user_group = Column(String(250), nullable=True)
+    semester = Column(String(250), nullable=True)
+    counter=Column(Integer, nullable=True)
 
 class FFile(Base):
     #von moodle.py eingetragen
@@ -31,6 +32,7 @@ class FFile(Base):
     message_id = Column(String(250), nullable=False)
     course = Column(Integer, ForeignKey('course.id'))
     date = Column(DateTime, nullable=False)
+    coursedata = relationship("CCourse", back_populates="files")
     
 class BBlock(Base):
     #von moodle.py eingetragen
@@ -47,14 +49,18 @@ class CCourse(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(250), nullable=False)
     semester = Column(String(250), nullable=True)
+    files = relationship("FFile", back_populates="coursedata")
+    media = relationship("MMedia", back_populates="coursedata")
     
 
 class MMedia(Base):
     __tablename__ = 'media'
+    id=Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(250), nullable=False)
-    playerurl=Column(String(2000), primary_key=True)
+    playerurl=Column(String(2000))
     date = Column(DateTime, nullable=False)
     course = Column(Integer, ForeignKey('course.id'))
-
+    coursedata = relationship("CCourse", back_populates="media")
+    
 engine = create_engine('sqlite:///config/moodleusers.sqlite')
 Base.metadata.create_all(engine)	

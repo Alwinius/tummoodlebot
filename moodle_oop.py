@@ -7,14 +7,20 @@ from moodle_db_create import BBlock
 from moodle_db_create import Base
 from moodle_db_create import CCourse
 from moodle_db_create import FFile
-from moodle_db_create import UUser
 from moodle_db_create import MMedia
+from moodle_db_create import UUser
 import os
 import re
 import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import telegram
+from telegram import InlineKeyboardButton
+from telegram import InlineKeyboardMarkup
+from telegram.error import ChatMigrated
+from telegram.error import NetworkError
+from telegram.error import TimedOut
+from telegram.error import Unauthorized
 from urllib import parse
 
 engine = create_engine('sqlite:///config/moodleusers.sqlite')
@@ -26,6 +32,28 @@ config.read('config/config.ini')
 ignore_courses = []
 
 bot = telegram.Bot(token=config['DEFAULT']['BotToken'])
+
+def send(chat_id, message):
+    button_list = [[InlineKeyboardButton("🛡️ Benachrichtigungen deaktivieren", callback_data="5$0"), InlineKeyboardButton("📆 Semester auswählen", callback_data="4"), InlineKeyboardButton("🔍 Kurse anzeigen", callback_data="1")]]
+    reply_markup = InlineKeyboardMarkup(button_list)
+    try:
+        bot.sendMessage(chat_id=chat_id, text=message, parse_mode=telegram.ParseMode.HTML, reply_markup=reply_markup)
+    except Unauthorized:
+        session = DBSession()
+        user = session.query(UUser).filter(UUser.id == chat_id).first()
+        user.notifications = False
+        session.commit()
+        session.close()
+        return True
+    except (TimedOut, NetworkError):
+        return send(chat_id, message)
+    except ChatMigrated as e:
+        session = DBSession()
+        user = session.query(UUser).filter(UUser.id == user_id).first()
+        user.id = e.new_chat_id
+        session.commit()
+        session.close()
+        return True
 
 class Moodleuser:
     def __init__(self, username, password):
@@ -133,19 +161,17 @@ class Course:
                     toadd = ""
                 if len(message[counter] + toadd) > 4096:
                     counter += 1
-                try:
-                    message[counter] = message[counter] + toadd
-                except KeyError:
                     message[counter] = toadd
+                else:
+                    message[counter] = message[counter] + toadd
             #fetch users and send message to all of them
             session = DBSession()
-            chatids = list()
-            users = session.query(UUser).filter(UUser.notifications == True)
+            users = session.query(UUser).filter(UUser.notifications == True, UUser.semester == self._semester)
             for user in users:
-                chatids.append(user.id)
+                user.counter += 1
+                session.commit()
                 for key, msg in message.items():
-                    bot.sendMessage(chat_id=user.id, text=msg, parse_mode=telegram.ParseMode.HTML)
-                    #catch errors here
+                    send(user.id, msg)
             session.close()
 		
 		
@@ -275,22 +301,22 @@ class Link:
     def __ParseVideoFolder(self):
         resp = self._session.get(re.sub(r"view", "launch", self._url))
         soup = BeautifulSoup(resp.text, "lxml")
-        oauth=soup.select("input")
+        oauth = soup.select("input")
         values = {}
         for inp in oauth:
             values[inp.get('name')] = inp.get('value')
-        r=self._session.post(soup.select("form")[0].get("action"), data=values)
-        courseid=re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
-        reqbody={"IsViewPage":True, "CatalogId":courseid,"CurrentFolderId":courseid,"ItemsPerPage":200,"PageIndex":0,"CatalogSearchType":"SearchInFolder"}
-        medialist=self._session.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
-        self._values=[]
+        r = self._session.post(soup.select("form")[0].get("action"), data=values)
+        courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
+        reqbody = {"IsViewPage":True, "CatalogId":courseid, "CurrentFolderId":courseid, "ItemsPerPage":200, "PageIndex":0, "CatalogSearchType":"SearchInFolder"}
+        medialist = self._session.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
+        self._values = []
         session = DBSession()
         for media in medialist["PresentationDetailsList"]:
             medium = session.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
             if not medium:
                 #create course
-                datetim=datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
-                new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"],date=datetim, course=self._course)
+                datetim = datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
+                new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=self._course)
                 session.add(new_medium)
                 session.commit()
         session.close()            
@@ -313,6 +339,4 @@ class Link:
 
             
 			
-alwin = Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
-
-#schaltungstechnik = Course(31207, "Schaltungstechnik 1", alwin._session)
+Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
