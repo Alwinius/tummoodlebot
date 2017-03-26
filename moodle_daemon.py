@@ -1,9 +1,8 @@
-#!/bin/python3
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 import configparser
 import copy
 import logging
-import json
 from moodle_db_create import Base
 from moodle_db_create import CCourse
 from moodle_db_create import FFile
@@ -66,7 +65,7 @@ def CheckUser(bot, update):
         return ent
 
 def Semester(bot, update): #Semesterauswahl anzeigen
-    usr = CheckUser(bot, update)
+    CheckUser(bot, update)
     session = DBSession()
     semesters = list()
     entries = session.query(CCourse).distinct(CCourse.semester).group_by(CCourse.semester).all()
@@ -123,7 +122,7 @@ def ShowCourses(bot, update):
     session.close()
     
 def ShowCourseContent(bot, update, arg):
-    usr = CheckUser(bot, update)
+    CheckUser(bot, update)
     session = DBSession()
     #erstmal schauen ob Videos exisistieren
     entry = session.query(MMedia).filter(MMedia.course == arg).first()
@@ -159,7 +158,7 @@ def ShowCourseContent(bot, update, arg):
     session.close()
 
 def ShowVideoContent(bot, update, arg):
-    usr = CheckUser(bot, update)
+    CheckUser(bot, update)
     button_list = [[InlineKeyboardButton("🏠 Home", callback_data="0"), InlineKeyboardButton("🔍 Kurse", callback_data="1"), InlineKeyboardButton("📔 Dieser Kurs", callback_data="1$" + arg)]]
     reply_markup = InlineKeyboardMarkup(button_list)
     session = DBSession()
@@ -196,6 +195,12 @@ def ShowHome(bot, update, usr, text="🏠 Home"):
     reply_markup = InlineKeyboardMarkup(button_list)
     send_or_edit(bot, update, text, reply_markup)
 
+def About(bot, update):
+    CheckUser(bot, update)
+    button_list = [[InlineKeyboardButton("🏠 Home", callback_data="0")]]
+    reply_markup = InlineKeyboardMarkup(button_list)
+    bot.sendMessage(chat_id=update.message.chat_id, text="Dieser Bot wurde erstellt von @Alwinius. Der Quellcode ist unter https://github.com/Alwinius/tummoodlebot verfügbar.", reply_markup=reply_markup)	
+
 def AllInline(bot, update):
     args = update.callback_query.data.split("$")
     if int(args[0]) == 0:
@@ -220,15 +225,17 @@ def AllInline(bot, update):
         ShowVideoContent(bot, update, args[1])
     else:
         update.callback_query.message.reply_text("Kommando nicht erkannt")
-        bot.sendMessage(text="Inlinekommando nicht erkannt.\n\nData: "+update.callback_query.data+"\n User: "+str(update.callback_query.message.chat), chat_id=config['DEFAULT']['AdminId'])
+        bot.sendMessage(text="Inlinekommando nicht erkannt.\n\nData: " + update.callback_query.data + "\n User: " + str(update.callback_query.message.chat), chat_id=config['DEFAULT']['AdminId'])
 
 start_handler = CommandHandler('start', Start)
+about_handler = CommandHandler('about', About)
 dispatcher.add_handler(start_handler)
+dispatcher.add_handler(about_handler)
 
 inlinehandler = CallbackQueryHandler(AllInline)
 dispatcher.add_handler(inlinehandler)
 
-fallbackhandler=MessageHandler(Filters.all, Start)
+fallbackhandler = MessageHandler(Filters.all, Start)
 dispatcher.add_handler(fallbackhandler)
 
 updater.start_webhook(listen='localhost', port=4214, webhook_url=config['DEFAULT']['WebHookUrl'])

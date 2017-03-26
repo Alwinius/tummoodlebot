@@ -1,0 +1,11 @@
+[Unit]
+Description=Start Moodle Bot Daemon
+
+[Service]
+Type=simple
+WorkingDirectory=/home/alwin/Moodle_dev
+ExecStart=/home/alwin/Moodle_dev/moodle_daemon.py
+User=alwin
+
+[Install]
+WantedBy=multi-user.target

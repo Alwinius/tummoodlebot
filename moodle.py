@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 from bs4 import BeautifulSoup
 import configparser
@@ -63,7 +63,7 @@ class Moodleuser:
         self._courses = self.__ListCourses() #courselist + name
         for course in self._courses[0]:
             if not course[0] in ignore_courses:
-                a = Course(course[0], course[1], self._session)
+                Course(course[0], course[1], self._session)
 		
     def __Login(self):
         s = requests.Session()
@@ -336,7 +336,5 @@ class Link:
                 self._values += link._values
             except IndexError:
                 pass
-
-            
-			
+	
 Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
