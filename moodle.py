@@ -34,7 +34,7 @@ ignore_courses = []
 bot = telegram.Bot(token=config['DEFAULT']['BotToken'])
 
 def send(chat_id, message):
-    button_list = [[InlineKeyboardButton("🛡️ Benachrichtigungen deaktivieren", callback_data="5$0"), InlineKeyboardButton("📆 Semester auswählen", callback_data="4"), InlineKeyboardButton("🔍 Kurse anzeigen", callback_data="1")]]
+    button_list = [[InlineKeyboardButton("🛡️ Benachrichtigungen deaktivieren", callback_data="5$0")], [InlineKeyboardButton("📆 Semester auswählen", callback_data="4")], [InlineKeyboardButton("🔍 Kurse anzeigen", callback_data="1")]]
     reply_markup = InlineKeyboardMarkup(button_list)
     try:
         bot.sendMessage(chat_id=chat_id, text=message, parse_mode=telegram.ParseMode.HTML, reply_markup=reply_markup)
@@ -150,12 +150,12 @@ class Course:
             message = {0:"Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + str(self._courseid) + "\">" + self._coursename + "</a> erkannt:"}
             for entry in self._changes:
                 if entry["type"] == "url":
-                    print(entry)
+                    #print(entry)
                     toadd = "\n<a href=\"" + entry["url"] + "\">" + entry["title"] + "</a>"
                     if len(entry["contentafterlink"]) > 0:
                         toadd += " - " + entry["contentafterlink"]
                 elif entry["type"] == "text":
-                    print(entry)
+                    #print(entry)
                     toadd = "\n" + entry["cont"]
                 else:
                     toadd = ""
@@ -210,7 +210,7 @@ class Block:
         blockentry = session.query(BBlock).filter(BBlock.url == self._url, BBlock.cont == self._cont, BBlock.title == self._title).first()
         if not blockentry:
             #create block
-            print("Adding " + self._url + " " + self._title + " " + self._cont)
+            #print("Adding " + self._url + " " + self._title + " " + self._cont)
             new_block = BBlock(url=self._url, cont=self._cont, type=self.__type, course=self._course, title=self._title)
             session.add(new_block)
             session.commit()
@@ -262,7 +262,7 @@ class Link:
             self._values = []
         
     def __Download(self):
-        print("Downloading from " + str(self._url))
+        #print("Downloading from " + str(self._url))
         r = self._session.get(self._url, stream=True)
         filename = parse.unquote(r.url.split('/')[-1])
         with open(filename, 'wb') as f:
@@ -277,9 +277,9 @@ class Link:
         if not fileentry:
             #Datei ist noch nicht gespeichert
             filename = self.__Download()
-            #Dateigröße checken
+            #Dateigroesse checken
             if os.path.getsize(filename) < 50 * 1024 * 1024:
-                #zu Telegram hochladen & löschen
+                #zu Telegram hochladen & loeschen
                 coursename = session.query(CCourse).filter(CCourse.id == self._course).one()
                 resp = bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'), caption=coursename.name + " - " + self._title)
                 os.remove(filename)
