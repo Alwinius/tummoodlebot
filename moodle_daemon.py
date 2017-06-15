@@ -29,7 +29,7 @@ dispatcher = updater.dispatcher
 
 default_semester = "WiSe 2016-17"
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 def send_or_edit(bot, update, text, reply_markup):
     try:
@@ -134,12 +134,12 @@ def ShowCourseContent(bot, update, arg):
     #nun die Elemente in Form bringen
     entries = session.query(FFile).filter(FFile.course == arg).all()
     if len(entries) > 0:
-        message = {0:"Dateien zu [" + entries[0].coursedata.name + "](https://www.moodle.tum.de/course/view.php?id=" + str(entries[0].course) + "): \n"}
+        message = {0:"Dateien zu [" + entries[0].coursedata.name.replace("[","(").replace("]",")") + "](https://www.moodle.tum.de/course/view.php?id=" + str(entries[0].course) + "): \n"}
     else:
         message = {0:"Noch keine Dateien vorhanden."}
     counter = 0
     for ent in entries:
-        toadd = "[" + ent.title + "](https://t.me/tummoodle/" + ent.message_id + ")\n"
+        toadd = "[" + ent.title + "](https://t.me/tummoodle/" + ent.message_id + ")\n" if ent.message_id!="0" else "[" + ent.title + " (extern)](" + ent.url + ")\n"
         if len(message[counter] + toadd) > 4096:
             counter += 1
             message[counter] = toadd
@@ -235,7 +235,7 @@ dispatcher.add_handler(about_handler)
 inlinehandler = CallbackQueryHandler(AllInline)
 dispatcher.add_handler(inlinehandler)
 
-fallbackhandler = MessageHandler(Filters.all, Start)
+fallbackhandler = MessageHandler(Filters.text, Start)
 dispatcher.add_handler(fallbackhandler)
 
 updater.start_webhook(listen='localhost', port=4214, webhook_url=config['DEFAULT']['WebHookUrl'])

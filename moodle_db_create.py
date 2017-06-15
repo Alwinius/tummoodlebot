@@ -29,7 +29,8 @@ class FFile(Base):
     __tablename__ = 'file'
     id = Column(Integer, primary_key=True)
     title = Column(String(250), primary_key=True)
-    message_id = Column(String(250), nullable=False)
+    message_id = Column(String(250), nullable=True) #dont ask why I made this a string
+    url=Column(String(1000), nullable=True)
     course = Column(Integer, ForeignKey('course.id'))
     date = Column(DateTime, nullable=False)
     coursedata = relationship("CCourse", back_populates="files")
