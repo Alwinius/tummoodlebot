@@ -34,7 +34,7 @@ ignore_courses = []
 bot = telegram.Bot(token=config['DEFAULT']['BotToken'])
 
 def send(chat_id, message):
-    button_list = [[InlineKeyboardButton("🛡️ Benachrichtigungen deaktivieren", callback_data="5$0")], [InlineKeyboardButton("📆 Semester auswählen", callback_data="4")], [InlineKeyboardButton("🔍 Kurse anzeigen", callback_data="1")]]
+    button_list = [[InlineKeyboardButton("🛡️ Ben. deaktivieren", callback_data="5$0"), InlineKeyboardButton("📆 Sem. wählen", callback_data="4"), InlineKeyboardButton("🔍 Kurse anzeigen", callback_data="1")]]
     reply_markup = InlineKeyboardMarkup(button_list)
     try:
         bot.sendMessage(chat_id=chat_id, text=message, parse_mode=telegram.ParseMode.HTML, reply_markup=reply_markup)
@@ -62,8 +62,8 @@ class Moodleuser:
         self._session = self.__Login() #login
         self._courses = self.__ListCourses() #courselist + name
         for course in self._courses[0]:
-            if not course[0] in ignore_courses:
-                Course(course[0], course[1], self._session)
+            if not course[1] in ignore_courses:
+                Course(course[1], course[0], self._session)
 		
     def __Login(self):
         s = requests.Session()
@@ -79,7 +79,7 @@ class Moodleuser:
         url = "https://www.moodle.tum.de/my/?lang=de"
         response = self._session.get(url).text
         if response.find("<title>Meine Startseite</title>") > -1:
-            courselist = re.findall(r"href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">(.*?)<", response, re.MULTILINE)
+            courselist = re.findall(r"<a title=\"(.*?)\" href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">", response, re.MULTILINE)
             fullname = re.search(r"userpic defaultuserpic\" width=\"60\" height=\"60\" />(.*?)<", response).groups(1)[0]
             return [courselist, fullname]
         else:
@@ -100,6 +100,7 @@ class Course:
             new_course = CCourse(id=self._courseid, name=self._coursename, semester=self._semester)
             session.add(new_course)
             session.commit()
+            os.mkdir(config['DEFAULT']['CopyDir']+re.sub('[^\w\-_\. ()\[\]]', '_', self._coursename))
         session.close()
         #jetzt splitten und den rest
         self.__blocks = self.__Split()
@@ -188,7 +189,10 @@ class Block:
         if "activityinstance" in soup.get('class', []):
             activityinstance = soup
             self.__type = "url"
-            self._url = activityinstance.select("a")[0].get('href')
+            try:
+                self._url = activityinstance.select("a")[0].get('href')
+            except IndexError:
+                return False
             self._title = activityinstance.select(".instancename")[0].find(text=True, recursive=False)
             try:
                 self._cont = soup.parent.select(".contentafterlink")[0].text
@@ -237,6 +241,8 @@ class Link:
         self._course = blockself._course
         self._cont = blockself._cont
         self._session = blockself._session
+        if hasattr(blockself, "_firsttitle"):
+            self._ftitle=blockself._firsttitle
         normallink = re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(.*?)\/.*?id=([0-9]*)", self._url)
         dllink = re.match(r"https://www\.moodle\.tum\.de/pluginfile\.php/([0-9]*)/mod_folder/content/0/(.*)", self._url)
         if normallink is not None:
@@ -282,15 +288,28 @@ class Link:
                 #zu Telegram hochladen & loeschen
                 coursename = session.query(CCourse).filter(CCourse.id == self._course).one()
                 resp = bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'), caption=coursename.name + " - " + self._title)
-                os.remove(filename)
+                #os.remove(filename)
+                if hasattr(self, "_ftitle") :
+                    fullpath=config['DEFAULT']['CopyDir']+re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name)+"/"+re.sub('[^\w\-_\. ()\[\]]', '_', self._ftitle)
+                    if not os.path.exists(fullpath):
+                        os.mkdir(fullpath)
+                    os.rename(filename, fullpath+"/"+filename)
+                else:
+                    os.rename(filename, config['DEFAULT']['CopyDir']+re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name)+"/"+filename)
                 #in DB speichern
-                new_file = FFile(id=self._id, course=self._course, title=self._title, message_id=resp.message_id, date=datetime.now())
-                self._url = "https://t.me/tummoodle/" + str(resp.message_id)        
+                self._url = "https://t.me/tummoodle/" + str(resp.message_id) 
+                new_file = FFile(id=self._id, course=self._course, title=self._title, message_id=resp.message_id, date=datetime.now(), url=self._url)
                 session.add(new_file)
                 session.commit()
+                self._title+=" (Telegram-Cloud)"
             else:
+                new_file = FFile(id=self._id, course=self._course, title=self._title, message_id="0", date=datetime.now(), url=self._url)
+                session.add(new_file)
+                session.commit()
+                self._title+= " (Moodle)"
                 os.remove(filename)
-                self._url = "https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id)
+                #Datei trotzdem in DB speichern
+                #self._url = "https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id)
             #Speichern der Änderungen für Rückgabe
             self._values = [{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
         else: 
@@ -303,24 +322,28 @@ class Link:
         soup = BeautifulSoup(resp.text, "lxml")
         oauth = soup.select("input")
         values = {}
+        self._values=[]
         for inp in oauth:
             values[inp.get('name')] = inp.get('value')
-        r = self._session.post(soup.select("form")[0].get("action"), data=values)
-        courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
-        reqbody = {"IsViewPage":True, "CatalogId":courseid, "CurrentFolderId":courseid, "ItemsPerPage":200, "PageIndex":0, "CatalogSearchType":"SearchInFolder"}
-        medialist = self._session.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
-        self._values = []
-        session = DBSession()
-        for media in medialist["PresentationDetailsList"]:
-            medium = session.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
-            if not medium:
-                #create course
-                datetim = datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
-                new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=self._course)
-                session.add(new_medium)
-                session.commit()
-        session.close()            
-            
+        try: 
+            r = self._session.post(soup.select("form")[0].get("action"), data=values)
+            courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
+            reqbody = {"IsViewPage":True, "CatalogId":courseid, "CurrentFolderId":courseid, "ItemsPerPage":200, "PageIndex":0, "CatalogSearchType":"SearchInFolder"}
+            medialist = self._session.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
+            self._values = []
+            session = DBSession()
+            for media in medialist["PresentationDetailsList"]:
+                medium = session.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
+                if not medium:
+                    #create course
+                    datetim = datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
+                    new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=self._course)
+                    session.add(new_medium)
+                    session.commit()
+            session.close()  
+        except requests.exceptions.InvalidURL:
+            pass
+        
     def __ParseFolder(self):
         #Download filelist
         r = self._session.get("https://www.moodle.tum.de/mod/folder/view.php?id=" + str(self._id))
@@ -329,7 +352,7 @@ class Link:
         self._values = []
         for file in files:
             try:
-                self._url = re.sub(r"\?forcedownload=1", "", file.select("a")[0].get('href'))
+                self._url = re.sub(r"\?forcedownload=1$", "", file.select("a")[0].get('href'))
                 self._title = self._firsttitle + " - " + file.select(".fp-filename")[0].text
                 #initialize new Link element
                 link = Link(self)
