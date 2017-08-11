@@ -169,7 +169,13 @@ def ShowVideoContent(bot, update, arg):
         message = {0:"Noch keine Videos vorhanden."}
     counter = 0
     for ent in sorted(entries, key=lambda x: x.date):
-        toadd = "[" + ent.name + "](" + ent.playerurl + ")\n"
+        toadd = "[" + ent.name + "](" + ent.playerurl + ")"
+        if ent.mp4url1 is not None and ent.mp4url1!="":
+            toadd+=" ([mp4](" + ent.mp4url1 + "))"
+        if ent.mp4url2 is not None and ent.mp4url2!="":
+            toadd+=", ([mp4](" + ent.mp4url2 + "))\n"
+        else:
+            toadd+="\n"
         if len(message[counter] + toadd) > 4096:
             counter += 1
             message[counter] = toadd

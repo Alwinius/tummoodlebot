@@ -62,6 +62,8 @@ class MMedia(Base):
     date = Column(DateTime, nullable=False)
     course = Column(Integer, ForeignKey('course.id'))
     coursedata = relationship("CCourse", back_populates="media")
+    mp4url1=Column(String(2000))
+    mp4url2=Column(String(2000))
     
 engine = create_engine('sqlite:///config/moodleusers.sqlite')
 Base.metadata.create_all(engine)	

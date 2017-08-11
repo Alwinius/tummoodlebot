@@ -11,6 +11,7 @@ from moodle_db_create import MMedia
 from moodle_db_create import UUser
 import os
 import re
+import json
 import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -100,7 +101,7 @@ class Course:
             new_course = CCourse(id=self._courseid, name=self._coursename, semester=self._semester)
             session.add(new_course)
             session.commit()
-            os.mkdir(config['DEFAULT']['CopyDir']+re.sub('[^\w\-_\. ()\[\]]', '_', self._coursename))
+            os.mkdir(config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', self._coursename))
         session.close()
         #jetzt splitten und den rest
         self.__blocks = self.__Split()
@@ -242,7 +243,7 @@ class Link:
         self._cont = blockself._cont
         self._session = blockself._session
         if hasattr(blockself, "_firsttitle"):
-            self._ftitle=blockself._firsttitle
+            self._ftitle = blockself._firsttitle
         normallink = re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(.*?)\/.*?id=([0-9]*)", self._url)
         dllink = re.match(r"https://www\.moodle\.tum\.de/pluginfile\.php/([0-9]*)/mod_folder/content/0/(.*)", self._url)
         if normallink is not None:
@@ -263,7 +264,7 @@ class Link:
                 self._values = [{"type": "url", "title": self._title, "url": self._url, "contentafterlink":self._cont}]
         elif dllink is not None: 
             self._id = dllink.groups(1)[0]
-            self.__ProcessFile()
+            self.__ProcessFile()  
         else: #Link entspricht nicht dem Schema
             self._values = []
         
@@ -289,24 +290,24 @@ class Link:
                 coursename = session.query(CCourse).filter(CCourse.id == self._course).one()
                 resp = bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'), caption=coursename.name + " - " + self._title)
                 #os.remove(filename)
-                if hasattr(self, "_ftitle") :
-                    fullpath=config['DEFAULT']['CopyDir']+re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name)+"/"+re.sub('[^\w\-_\. ()\[\]]', '_', self._ftitle)
+                if hasattr(self, "_ftitle"):
+                    fullpath = config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name) + "/" + re.sub('[^\w\-_\. ()\[\]]', '_', self._ftitle)
                     if not os.path.exists(fullpath):
                         os.mkdir(fullpath)
-                    os.rename(filename, fullpath+"/"+filename)
+                    os.rename(filename, fullpath + "/" + filename)
                 else:
-                    os.rename(filename, config['DEFAULT']['CopyDir']+re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name)+"/"+filename)
+                    os.rename(filename, config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name) + "/" + filename)
                 #in DB speichern
                 self._url = "https://t.me/tummoodle/" + str(resp.message_id) 
                 new_file = FFile(id=self._id, course=self._course, title=self._title, message_id=resp.message_id, date=datetime.now(), url=self._url)
                 session.add(new_file)
                 session.commit()
-                self._title+=" (Telegram-Cloud)"
+                self._title += " (Telegram-Cloud)"
             else:
                 new_file = FFile(id=self._id, course=self._course, title=self._title, message_id="0", date=datetime.now(), url=self._url)
                 session.add(new_file)
                 session.commit()
-                self._title+= " (Moodle)"
+                self._title += " (Moodle)"
                 os.remove(filename)
                 #Datei trotzdem in DB speichern
                 #self._url = "https://www.moodle.tum.de/mod/resource/view.php?id=" + str(self._id)
@@ -322,7 +323,7 @@ class Link:
         soup = BeautifulSoup(resp.text, "lxml")
         oauth = soup.select("input")
         values = {}
-        self._values=[]
+        self._values = []
         for inp in oauth:
             values[inp.get('name')] = inp.get('value')
         try: 
@@ -335,9 +336,19 @@ class Link:
             for media in medialist["PresentationDetailsList"]:
                 medium = session.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
                 if not medium:
-                    #create course
+                    #find file path(s)
+                    header={"Content-Type":"application/json; charset=utf-8"}
+                    data={"getPlayerOptionsRequest":{"ResourceId":media["Id"],"QueryString":"?catalog="+courseid}}
+                    realvid=self._session.post("https://streams.tum.de/Mediasite/PlayerService/PlayerService.svc/json/GetPlayerOptions", data=json.dumps(data), headers=header).json()
+                    if not realvid["d"]["Presentation"] is None:
+                        mp4url1=re.search(r"(.*.\mp4)", realvid["d"]["Presentation"]["Streams"][0]["VideoUrls"][0]["Location"]).groups(1)[0]
+                        mp4url2=re.search(r"(.*.\mp4)", realvid["d"]["Presentation"]["Streams"][1]["VideoUrls"][0]["Location"]).groups(1)[0] if len(realvid["d"]["Presentation"]["Streams"])>1 else "" 
+                    else:
+                        mp4url1=""
+                        mp4url2=""
+                    #create entry
                     datetim = datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
-                    new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=self._course)
+                    new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=self._course, mp4url1=mp4url1, mp4url2=mp4url2)
                     session.add(new_medium)
                     session.commit()
             session.close()  
