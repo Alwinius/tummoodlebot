@@ -184,8 +184,9 @@ def ShowVideoContent(bot, update, arg):
     if len(message) > 1:
         send_or_edit(bot, update, message[0], None)
         count = 1
-        while count + 2 <= len(message):
+        while count <= len(message)-2:
             bot.sendMessage(text=message[count], chat_id=update.callback_query.message.chat.id, parse_mode=telegram.ParseMode.MARKDOWN, disable_web_page_preview=True)
+            count+=1
         bot.sendMessage(text=message[len(message)-1], chat_id=update.callback_query.message.chat.id, parse_mode=telegram.ParseMode.MARKDOWN, reply_markup=reply_markup, disable_web_page_preview=True)
     else:
         send_or_edit(bot, update, message[0], reply_markup)

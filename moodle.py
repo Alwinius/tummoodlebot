@@ -242,6 +242,7 @@ class Link:
         self._course = blockself._course
         self._cont = blockself._cont
         self._session = blockself._session
+        self._errorcounter=0
         if hasattr(blockself, "_firsttitle"):
             self._ftitle = blockself._firsttitle
         normallink = re.match(r"https:\/\/www\.moodle\.tum\.de\/mod\/(.*?)\/.*?id=([0-9]*)", self._url)
@@ -357,10 +358,17 @@ class Link:
         
     def __ParseFolder(self):
         #Download filelist
-        r = self._session.get("https://www.moodle.tum.de/mod/folder/view.php?id=" + str(self._id))
+        self._values = []
+        try:
+            r = self._session.get("https://www.moodle.tum.de/mod/folder/view.php?id=" + str(self._id))
+        except requests.exceptions.ChunkedEncodingError:
+            self._errorcounter+=1
+            if self._errorcounter<10:
+                self.__ParseFolder(self)
+            else:
+                raise NameError('Ten is not enough')
         soup = BeautifulSoup(r.text, "lxml")
         files = soup.select(".fp-filename-icon")
-        self._values = []
         for file in files:
             try:
                 self._url = re.sub(r"\?forcedownload=1$", "", file.select("a")[0].get('href'))
