@@ -31,6 +31,7 @@ DBSession = sessionmaker(bind=engine)
 config = configparser.ConfigParser()
 config.read('config/config.ini')
 ignore_courses = []
+current_semester="SoSe 2017"
 
 bot = telegram.Bot(token=config['DEFAULT']['BotToken'])
 
@@ -63,7 +64,7 @@ class Moodleuser:
         self._session = self.__Login() #login
         self._courses = self.__ListCourses() #courselist + name
         for course in self._courses[0]:
-            if not course[1] in ignore_courses:
+            if not course[1] in ignore_courses and course[2]==current_semester:
                 Course(course[1], course[0], course[2], self._session)
 		
     def __Login(self):
@@ -396,12 +397,12 @@ def ParseVideoFolder(dbsess, s, course):
 
 def ProcessVideos(user, password, s):
     sess=DBSession()
-    courses = sess.query(CCourse).all()
+    courses = sess.query(CCourse).filter(CCourse.semester == current_semester).all()
     s.get("https://streams.tum.de/Mediasite/Login/")
     login=s.post("https://streams.tum.de/Mediasite/Login/", data={"UserName":user, "Password":password, "RememberMe":"false"}, allow_redirects=False)
     if login.status_code==302:
         for course in courses:
-            print(course.name)
+            print(" - "+course.name)
             ParseVideoFolder(sess, s, course)
     else:
         raise Exception("Login failed on Mediasite")
