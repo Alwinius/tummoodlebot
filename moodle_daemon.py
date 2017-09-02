@@ -206,7 +206,7 @@ def About(bot, update):
     CheckUser(bot, update)
     button_list = [[InlineKeyboardButton("🏠 Home", callback_data="0")]]
     reply_markup = InlineKeyboardMarkup(button_list)
-    bot.sendMessage(chat_id=update.message.chat_id, text="Dieser Bot wurde erstellt von @Alwinius. Der Quellcode ist unter https://github.com/Alwinius/tummoodlebot verfügbar.", reply_markup=reply_markup)	
+    bot.sendMessage(chat_id=update.message.chat_id, text="Dieser Bot wurde erstellt von @Alwinius. Der Quellcode ist unter https://github.com/Alwinius/tummoodlebot verfügbar.\nWeitere interessante Bots: \n - @tummensabot\n - @mydealz_bot", reply_markup=reply_markup)	
 
 def AllInline(bot, update):
     args = update.callback_query.data.split("$")
