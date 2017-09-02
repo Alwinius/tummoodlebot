@@ -50,6 +50,7 @@ class CCourse(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(250), nullable=False)
     semester = Column(String(250), nullable=True)
+    videoidentifier = Column(String(250), nullable=True)
     files = relationship("FFile", back_populates="coursedata")
     media = relationship("MMedia", back_populates="coursedata")
     

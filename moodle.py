@@ -64,7 +64,7 @@ class Moodleuser:
         self._courses = self.__ListCourses() #courselist + name
         for course in self._courses[0]:
             if not course[1] in ignore_courses:
-                Course(course[1], course[0], self._session)
+                Course(course[1], course[0], course[2], self._session)
 		
     def __Login(self):
         s = requests.Session()
@@ -80,16 +80,17 @@ class Moodleuser:
         url = "https://www.moodle.tum.de/my/?lang=de"
         response = self._session.get(url).text
         if response.find("<title>Meine Startseite</title>") > -1:
-            courselist = re.findall(r"<a title=\"(.*?)\" href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">", response, re.MULTILINE)
+            courselist = re.findall(r"<a title=\"(.*?)\" href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">.*?coc-metainfo\">\((.*?)  \|", response, re.MULTILINE)
             fullname = re.search(r"userpic defaultuserpic\" width=\"60\" height=\"60\" />(.*?)<", response).groups(1)[0]
             return [courselist, fullname]
         else:
             return [[], ""]
 			
 class Course:
-    def __init__(self, courseid, coursename, sess):
+    def __init__(self, courseid, coursename, semester, sess):
         self._courseid = courseid
         self._coursename = coursename
+        print(" - "+coursename)
         self._session = sess
         self._changes = list()
         self.__GetContent()
@@ -98,7 +99,7 @@ class Course:
         courseentry = session.query(CCourse).filter(CCourse.id == courseid).first()
         if not courseentry:
             #create course
-            new_course = CCourse(id=self._courseid, name=self._coursename, semester=self._semester)
+            new_course = CCourse(id=self._courseid, name=self._coursename, semester=semester)
             session.add(new_course)
             session.commit()
             os.mkdir(config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', self._coursename))
@@ -119,7 +120,6 @@ class Course:
             cont = re.sub(r"(<span class=\"accesshide \" >Diese Woche</span>)", "", cont)
             cont = re.sub(r"( current\")", "\"", cont)
             self.__content = cont
-            self._semester = soup.select('span[itemprop="title"]')[1].string
         else:
             self.__content = ""
             self._semester = ""
@@ -258,7 +258,7 @@ class Link:
                 self.__ParseFolder()
             elif self._urltype == "lti": 
                 #videoordner
-                self.__ParseVideoFolder()
+                self.__PrepareVideoFolder()
             else: #URL entspricht Muster ist aber nicht folder oder ressource
                 self._urltype = "unknown"
                 self._id = 0
@@ -319,43 +319,6 @@ class Link:
             self._values = []
         session.close()
         
-    def __ParseVideoFolder(self):
-        resp = self._session.get(re.sub(r"view", "launch", self._url))
-        soup = BeautifulSoup(resp.text, "lxml")
-        oauth = soup.select("input")
-        values = {}
-        self._values = []
-        for inp in oauth:
-            values[inp.get('name')] = inp.get('value')
-        try: 
-            r = self._session.post(soup.select("form")[0].get("action"), data=values)
-            courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
-            reqbody = {"IsViewPage":True, "CatalogId":courseid, "CurrentFolderId":courseid, "ItemsPerPage":200, "PageIndex":0, "CatalogSearchType":"SearchInFolder"}
-            medialist = self._session.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
-            self._values = []
-            session = DBSession()
-            for media in medialist["PresentationDetailsList"]:
-                medium = session.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
-                if not medium:
-                    #find file path(s)
-                    header={"Content-Type":"application/json; charset=utf-8"}
-                    data={"getPlayerOptionsRequest":{"ResourceId":media["Id"],"QueryString":"?catalog="+courseid}}
-                    realvid=self._session.post("https://streams.tum.de/Mediasite/PlayerService/PlayerService.svc/json/GetPlayerOptions", data=json.dumps(data), headers=header).json()
-                    if not realvid["d"]["Presentation"] is None:
-                        mp4url1=re.search(r"(.*.\mp4)", realvid["d"]["Presentation"]["Streams"][0]["VideoUrls"][0]["Location"]).groups(1)[0]
-                        mp4url2=re.search(r"(.*.\mp4)", realvid["d"]["Presentation"]["Streams"][1]["VideoUrls"][0]["Location"]).groups(1)[0] if len(realvid["d"]["Presentation"]["Streams"])>1 else "" 
-                    else:
-                        mp4url1=""
-                        mp4url2=""
-                    #create entry
-                    datetim = datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
-                    new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=self._course, mp4url1=mp4url1, mp4url2=mp4url2)
-                    session.add(new_medium)
-                    session.commit()
-            session.close()  
-        except requests.exceptions.InvalidURL:
-            pass
-        
     def __ParseFolder(self):
         #Download filelist
         self._values = []
@@ -378,5 +341,76 @@ class Link:
                 self._values += link._values
             except IndexError:
                 pass
-	
-Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
+            
+    def __PrepareVideoFolder(self):
+        #check if already in db would be too complicated
+        self._values = []
+        # save that to db now
+        session=DBSession()
+        course=session.query(CCourse).filter(CCourse.id == self._course).first()
+        course.videoidentifier=re.sub(r"view", "launch", self._url)
+        session.commit()
+        session.close()
+            
+def ParseVideoFolder(dbsess, s, course):
+    if course.videoidentifier is None or course.videoidentifier=="":
+        return False
+    if "https://www.moodle.tum.de" in course.videoidentifier:
+        resp = s.get(course.videoidentifier)
+        soup = BeautifulSoup(resp.text, "lxml")
+        oauth = soup.select("input")
+        values = {}
+        for inp in oauth:
+            values[inp.get('name')] = inp.get('value')
+        r = s.post(soup.select("form")[0].get("action"), data=values)
+    else:
+        r = s.get("https://streams.tum.de/Mediasite/Catalog/catalogs/"+course.videoidentifier)
+    courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
+    reqbody = {"IsViewPage":True, "CatalogId":courseid, "CurrentFolderId":courseid, "ItemsPerPage":200, "PageIndex":0, "CatalogSearchType":"SearchInFolder"}
+    medialist = s.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
+    for media in medialist["PresentationDetailsList"]:
+        medium = dbsess.query(MMedia).filter(MMedia.playerurl == media["PlayerUrl"]).first()
+        if not medium:
+            print("  - "+media["Name"])
+            #find file path(s)
+            header={"Content-Type":"application/json; charset=utf-8"}
+            data={"getPlayerOptionsRequest":{"ResourceId":media["Id"],"QueryString":"?catalog="+courseid}}
+            realvid=s.post("https://streams.tum.de/Mediasite/PlayerService/PlayerService.svc/json/GetPlayerOptions", data=json.dumps(data), headers=header).json()
+            videos=[]
+            if not realvid["d"]["Presentation"] is None:
+                for stream in realvid["d"]["Presentation"]["Streams"]:
+                    for vid in stream['VideoUrls']:
+                        if vid["MediaType"]=="MP4":
+                            videos.append(vid["Location"][:-68])
+                videos.append("")
+                mp4url1=videos[0]
+                mp4url2=videos[1]
+            else:
+                mp4url1=""
+                mp4url2=""
+            #create entry
+            datetim = datetime.strptime(media["FullStartDate"], "%m/%d/%Y %H:%M:%S")
+            new_medium = MMedia(name=media["Name"], playerurl=media["PlayerUrl"], date=datetim, course=course.id, mp4url1=mp4url1, mp4url2=mp4url2)
+            dbsess.add(new_medium)
+            dbsess.commit() 
+
+def ProcessVideos(user, password, s):
+    sess=DBSession()
+    courses = sess.query(CCourse).all()
+    s.get("https://streams.tum.de/Mediasite/Login/")
+    login=s.post("https://streams.tum.de/Mediasite/Login/", data={"UserName":user, "Password":password, "RememberMe":"false"}, allow_redirects=False)
+    if login.status_code==302:
+        for course in courses:
+            print(course.name)
+            ParseVideoFolder(sess, s, course)
+    else:
+        raise Exception("Login failed on Mediasite")
+    sess.close()
+
+print("Processing Moodle:")
+moodle=Moodleuser(config['DEFAULT']['Username'], config['DEFAULT']['Password'])
+#now do other stuff
+
+#finally process all videos
+print("Processing Videos:")
+ProcessVideos(config['DEFAULT']['Username'], config['DEFAULT']['Password'], moodle._session)
