@@ -223,8 +223,8 @@ class Course:
             for user in users:
                 user.counter += 1
                 session.commit()
-                for key, msg in message.items():
-                    send(user.id, msg)
+                #for key, msg in message.items():
+                 #   send(user.id, msg)
             session.close()
 
 
@@ -367,6 +367,10 @@ def processfile(file):
     fileentry = session.query(FFile).filter(FFile.id == file["id"], FFile.title == file["title"]).first()
     if not fileentry:
         # file is not yet saved
+        # check first if the file is downloadable
+        if file["session"].head(file["url"]).status_code != 200:
+            return None
+        # now download
         filename = download(file["url"], file["session"])
         sleep(3)
         # check file size
