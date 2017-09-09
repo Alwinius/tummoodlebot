@@ -223,8 +223,8 @@ class Course:
             for user in users:
                 user.counter += 1
                 session.commit()
-                #for key, msg in message.items():
-                 #   send(user.id, msg)
+                for key, msg in message.items():
+                   send(user.id, msg)
             session.close()
 
 
