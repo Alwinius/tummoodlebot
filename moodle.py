@@ -9,7 +9,6 @@ from moodle_db_create import CCourse
 from moodle_db_create import FFile
 from moodle_db_create import MMedia
 from moodle_db_create import UUser
-from urllib import parse
 import os
 import re
 import json
@@ -34,7 +33,7 @@ DBSession = sessionmaker(bind=engine)
 config = configparser.ConfigParser()
 config.read('config/config.ini')
 ignore_courses = []
-current_semester = "SoSe 2017"
+current_semester = config["DEFAULT"]["CurrentSemester"]
 
 bot = telegram.Bot(token=config['DEFAULT']['BotToken'])
 
@@ -377,7 +376,7 @@ def processfile(file):
         if os.path.getsize(filename) < 50 * 1024 * 1024:
             # upload to telegram and delete
             coursename = session.query(CCourse).filter(CCourse.id == file["course"]).one()
-            resp = bot.sendDocument(chat_id=-1001114864097, document=open(filename, 'rb'),
+            resp = bot.sendDocument(chat_id=config["DEFAULT"]["FilesChannelId"], document=open(filename, 'rb'),
                                     caption=coursename.name + " - " + file["title"])
             path = config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name)
             if not os.path.exists(path):
@@ -391,7 +390,7 @@ def processfile(file):
             else:
                 move(filename, path + "/" + filename)
             # in DB speichern
-            file["url"] = "https://t.me/tummoodle/" + str(resp.message_id)
+            file["url"] = "https://t.me/" + config["DEFAULT"]["FilesChannelName"] + "/" + str(resp.message_id)
             new_file = FFile(id=file["id"], course=file["course"], title=file["title"], message_id=resp.message_id,
                              date=datetime.now(), url=file["url"])
             session.add(new_file)

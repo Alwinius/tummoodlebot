@@ -24,6 +24,7 @@ class UUser(Base):
     # for tummoodlebot 2.0
     semester = Column(String(250), nullable=True)
     counter = Column(Integer, nullable=True)
+    current_selection = Column(Integer, nullable=True)
 
 
 class FFile(Base):
