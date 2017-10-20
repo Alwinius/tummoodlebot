@@ -108,7 +108,7 @@ class Moodleuser:
             courselist = re.findall(
                 r"<a title=\"(.*?)\" href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">.*?coc-metainfo\">\((.*?)  \|",
                 response, re.MULTILINE)
-            fullname = re.search(r"userpic defaultuserpic\" width=\"60\" height=\"60\" />(.*?)<", response).groups(1)[0]
+            fullname = re.search(r'<span class="usertext">(.*?)<', response).groups(1)[0]
             return [courselist, fullname]
         else:
             return [[], ""]
@@ -122,6 +122,7 @@ class Course:
         self._session = course["session"] if "session" in course else requests.session()
         self._changes = list()
         self._semester = course["semester"]
+        self._location= course["location"]
         self._url = course["url"] if "url" in course else ""
         if course["location"] == "moodle":
             self.__GetContent()
@@ -146,7 +147,9 @@ class Course:
         self.__PropagateChanges()
 
     def _parsepdf(self):
-        r = requests.get(self._url)
+        jar = requests.cookies.RequestsCookieJar()
+        jar.set("ASP.NET_SessionId","5o3qqu33jod31m55qjyx13rs", domain="www.wsi.tum.de", path="/")
+        r = requests.get(self._url, cookies=jar)
         soup = BeautifulSoup(r.content, "lxml")
         a = soup("a")
         session = DBSession()
@@ -200,8 +203,12 @@ class Course:
         # Prepare message
         if len(self._changes) > 0:
             counter = 0
-            message = {0: "Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + str(
-                self._courseid) + "\">" + self._coursename + "</a> erkannt:"}
+            if self._location == "moodle":
+                message = {0: "Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + str(
+                    self._courseid) + "\">" + self._coursename + "</a> erkannt:"}
+            elif self._location == "default":
+                message = {0: "Änderungen im Kurs <a href=\"" + str(
+                    self._url) + "\">" + self._coursename + "</a> erkannt:"}
             for entry in self._changes:
                 if entry["type"] == "url":
                     toadd = "\n<a href=\"" + entry["url"] + "\">" + entry["title"] + "</a>"
@@ -474,7 +481,7 @@ def ProcessVideos(user, password, s):
 
 def processothercontent():
     sess = DBSession()
-    courses = sess.query(CCourse).filter(CCourse.location != "moodle").all()
+    courses = sess.query(CCourse).filter(CCourse.location != "moodle", CCourse.semester == current_semester).all()
     for course in courses:
         Course(course.__dict__)
 
