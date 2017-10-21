@@ -120,7 +120,7 @@ class Course:
         self._coursename = course["name"]
         print(" - " + self._coursename)
         self._session = course["session"] if "session" in course else requests.session()
-        self._changes = list()
+        self._changes = []
         self._semester = course["semester"]
         self._location= course["location"]
         self._url = course["url"] if "url" in course else ""
@@ -135,15 +135,37 @@ class Course:
                 session.add(new_course)
                 session.commit()
                 os.mkdir(config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', self._coursename))
+            else:
+                if courseentry.location != "moodle":
+                    # Obacht, jetzt kommen spezial-Sachen f�r moodle-kurse
+                    self._location=courseentry.location
+                    if self._location == "moodle_basic":
+                        # Jetzt suchen wir nur noch Links nach Dateien ab
+                        # Also suchen wir erstmal alle Links raus
+                        soup=BeautifulSoup(self.__content, "lxml")
+                        a = soup("a")
+                        session = DBSession()
+                        for b in a:
+                            myobject = type("Block", (object,), {})() # this is a horrible hack, I know
+                            myobject._title = b.text
+                            myobject._url = b["href"]
+                            myobject._course = self._courseid
+                            myobject._session = self._session
+                            myobject._cont = ""
+                            l = Link(myobject)
+                            for lin in l._values:
+                                if lin is not None and "t.me" in lin["url"]:
+                                    self._changes.append(lin)
+                else:
+                    # jetzt splitten und den rest
+                    self.__blocks = self.__Split()
             session.close()
-            # jetzt splitten und den rest
-            self.__blocks = self.__Split()
         else:
             # jetzt kommt der neue Teil
             if course["location"] == "default":
                 self._parsepdf()
 
-        # Hier kommt jetzt die Ausgabe oder sowas von allen Änderungen, die in self.__changes gespeichert sind
+        # Hier kommt jetzt die Ausgabe oder sowas von allen Änderungen, die in self._changes gespeichert sind
         self.__PropagateChanges()
 
     def _parsepdf(self):
@@ -153,10 +175,9 @@ class Course:
         soup = BeautifulSoup(r.content, "lxml")
         a = soup("a")
         session = DBSession()
-        self._changes=[]
         for b in a:
             if "href" in b.attrs and re.search(r".pdf$", b["href"]) is not None:
-                name = b.text if b.text != "" else parse.unquote(b["href"].split('/')[-1])
+                name = b.text if b.text.strip() != "" else parse.unquote(b["href"].split('/')[-1])
                 ret = processfile({"url":parse.urljoin(self._url, b["href"]), "title":name, "id":self._courseid, "session":self._session,
                                  "course":self._courseid})
                 if ret is not None:
@@ -170,8 +191,8 @@ class Course:
             cont = soup.select(".course-content")
             cont = re.sub(r'( (?:aria\-owns=\"|id=\")random[0-9a-f]*_group\")', "", str(cont))
             cont = re.sub(r"(<img.*?>)", "", cont)
-            cont = re.sub(r"(<span class=\"accesshide \">Diese Woche</span>)", "", cont)
-            cont = re.sub(r"(<span class=\"accesshide \" >Diese Woche</span>)", "", cont)
+            cont = re.sub(r"(<span class=\"accesshide \">.*?</span>)", "", cont)
+            cont = re.sub(r"(<span class=\"accesshide \" >.*?</span>)", "", cont)
             cont = re.sub(r"( current\")", "\"", cont)
             self.__content = cont
         else:
@@ -182,7 +203,7 @@ class Course:
         content = self.__content
         # split in blocks first
         soup = BeautifulSoup(content, "lxml")
-        blocks = soup.select(".mod-indent")  # hier müssen wir auch noch die Physik-Blöcke mit aufnehmen
+        blocks = soup.select(".mod-indent")
         blocks2 = soup.select(".summary p")
         bl = list()
         for block in blocks2:
@@ -203,12 +224,14 @@ class Course:
         # Prepare message
         if len(self._changes) > 0:
             counter = 0
-            if self._location == "moodle":
+            if self._location == "moodle" or self._location == "moodle_basic":
                 message = {0: "Änderungen im Kurs <a href=\"https://www.moodle.tum.de/course/view.php?id=" + str(
                     self._courseid) + "\">" + self._coursename + "</a> erkannt:"}
             elif self._location == "default":
                 message = {0: "Änderungen im Kurs <a href=\"" + str(
                     self._url) + "\">" + self._coursename + "</a> erkannt:"}
+
+            print(self._changes)
             for entry in self._changes:
                 if entry["type"] == "url":
                     toadd = "\n<a href=\"" + entry["url"] + "\">" + entry["title"] + "</a>"
@@ -231,6 +254,9 @@ class Course:
                 session.commit()
                 for key, msg in message.items():
                    send(user.id, msg)
+            #This is for debugging onlyr
+            #for key, msg in message.items():
+            #    print(msg)
             session.close()
 
 
@@ -312,9 +338,9 @@ class Link:
             self._id = int(normallink.groups(1)[1])
             if self._urltype == "resource":
                 # zusätzliche Verarbeitung als Datei
-                self._values = [processfile(
-                    {"url": self._url, "title": self._title, "_ftitle": self._ftitle, "cont": self._cont,
-                     "id": self._id, "session": self._session, "course": self._course})]
+                r=processfile({"url": self._url, "title": self._title, "_ftitle": self._ftitle, "cont": self._cont,
+                     "id": self._id, "session": self._session, "course": self._course})
+                self._values=[r] if r is not None else []
             elif self._urltype == "folder":
                 # Parse as folder
                 self.__ParseFolder()
@@ -343,7 +369,7 @@ class Link:
             if self._errorcounter < 10:
                 self.__ParseFolder(self)
             else:
-                raise NameError('Ten is not enough')
+                raise NameError('Parsing of folder failed more than 10 times, url:https://www.moodle.tum.de/mod/folder/view.php?id='+str(self._id))
         soup = BeautifulSoup(r.text, "lxml")
         files = soup.select(".fp-filename-icon")
         for file in files:
@@ -374,7 +400,8 @@ def processfile(file):
     if not fileentry:
         # file is not yet saved
         # check first if the file is downloadable
-        if file["session"].head(file["url"]).status_code != 200:
+        test=file["session"].head(file["url"])
+        if test.status_code != 200 and test.status_code!=303:
             return None
         # now download
         filename = download(file["url"], file["session"])

@@ -151,7 +151,11 @@ def ShowCourseContent(bot, update, arg):
     # nun die Elemente in Form bringen
     entries = session.query(FFile).filter(FFile.course == arg).all()
     if len(entries) > 0:
-        message = {0: "Dateien zu [" + entries[0].coursedata.name.replace("[", "(").replace("]",
+        if entries[0].coursedata.url is not None:
+            message = {0: "Dateien zu [" + entries[0].coursedata.name.replace("[", "(").replace("]",")") + "](" + str(
+                entries[0].coursedata.url) + "): \n"}
+        else:
+            message = {0: "Dateien zu [" + entries[0].coursedata.name.replace("[", "(").replace("]",
                    ")") + "](https://www.moodle.tum.de/course/view.php?id=" + str(entries[0].course) + "): \n"}
     else:
         message = {0: "Noch keine Dateien vorhanden."}
@@ -188,9 +192,12 @@ def ShowVideoContent(bot, update, arg):
     session = DBSession()
     entries = session.query(MMedia).filter(MMedia.course == arg).all()
     if len(entries) > 0:
-        message = {
-            0: "Videos zu [" + entries[0].coursedata.name + "](https://www.moodle.tum.de/course/view.php?id=" + str(
-                entries[0].course) + "): \n"}
+        if entries[0].coursedata.url is not None:
+            message = {0: "Videos zu [" + entries[0].coursedata.name.replace("[", "(").replace("]",")") + "](" + str(
+                entries[0].coursedata.url) + "): \n"}
+        else:
+            message = {0: "Videos zu [" + entries[0].coursedata.name.replace("[", "(").replace("]",
+                   ")") + "](https://www.moodle.tum.de/course/view.php?id=" + str(entries[0].course) + "): \n"}
     else:
         message = {0: "Noch keine Videos vorhanden."}
     counter = 0
