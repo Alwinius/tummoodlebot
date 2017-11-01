@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from bs4 import BeautifulSoup
 import configparser
@@ -230,8 +230,6 @@ class Course:
             elif self._location == "default":
                 message = {0: "Änderungen im Kurs <a href=\"" + str(
                     self._url) + "\">" + self._coursename + "</a> erkannt:"}
-
-            print(self._changes)
             for entry in self._changes:
                 if entry["type"] == "url":
                     toadd = "\n<a href=\"" + entry["url"] + "\">" + entry["title"] + "</a>"
