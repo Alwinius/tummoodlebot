@@ -251,7 +251,7 @@ def About(bot, update):
     bot.sendMessage(chat_id=update.message.chat_id,
                     text="Dieser Bot wurde erstellt von @Alwinius. Der Quellcode ist unter "
                          "https://github.com/Alwinius/tummoodlebot verfügbar.\nWeitere interessante Bots: \n - "
-                         "@tummensabot\n - @mydealz_bot",
+                         "@tummensabot\n - @mydealz_bot\n - @tumroomsbot",
                     reply_markup=reply_markup)
 
 

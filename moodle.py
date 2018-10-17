@@ -56,7 +56,7 @@ def send(chat_id, message):
         return send(chat_id, message)
     except ChatMigrated as e:
         session = DBSession()
-        user = session.query(UUser).filter(UUser.id == user_id).first()
+        user = session.query(UUser).filter(UUser.id == chat_id).first()
         user.id = e.new_chat_id
         session.commit()
         session.close()
@@ -108,7 +108,7 @@ class Moodleuser:
             courselist = re.findall(
                 r"<a title=\"(.*?)\" href=\"https://www\.moodle\.tum\.de/course/view\.php\?id=([0-9]*)\">.*?coc-metainfo\">\((.*?)  \|",
                 response, re.MULTILINE)
-            fullname = re.search(r'<span class="usertext">(.*?)<', response).groups(1)[0]
+            fullname = re.search(r'<span class="usertext mr-1">(.*)</span>', response).groups(1)[0]
             return [courselist, fullname]
         else:
             return [[], ""]
@@ -409,7 +409,7 @@ def processfile(file):
             # upload to telegram and delete
             coursename = session.query(CCourse).filter(CCourse.id == file["course"]).one()
             resp = bot.sendDocument(chat_id=config["DEFAULT"]["FilesChannelId"], document=open(filename, 'rb'),
-                                    caption=coursename.name + " - " + file["title"])
+                                    caption=coursename.name + " - " + file["title"], timeout=60)
             path = config['DEFAULT']['CopyDir'] + re.sub('[^\w\-_\. ()\[\]]', '_', coursename.name)
             if not os.path.exists(path):
                 os.mkdir(path)
