@@ -456,7 +456,11 @@ def ParseVideoFolder(dbsess, s, course):
         r = s.post(soup.select("form")[0].get("action"), data=values)
     else:
         r = s.get("https://streams.tum.de/Mediasite/Catalog/catalogs/" + course.videoidentifier)
-    courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text).groups(1)[0]
+    courseid = re.search(r"CatalogId: '([a-f|0-9|-]*)',", r.text)
+    if courseid is None:
+        return False
+    else:
+        courseid=courseid.groups(1)[0]
     reqbody = {"IsViewPage": True, "CatalogId": courseid, "CurrentFolderId": courseid, "ItemsPerPage": 200,
                "PageIndex": 0, "CatalogSearchType": "SearchInFolder"}
     medialist = s.post("https://streams.tum.de/Mediasite/Catalog/Data/GetPresentationsForFolder", data=reqbody).json()
